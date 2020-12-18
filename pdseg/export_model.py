@@ -1,5 +1,5 @@
 # coding: utf8
-# Copyright (c) 2019 PaddlePaddle Authors. All Rights Reserve.
+# copyright (c) 2019 PaddlePaddle Authors. All Rights Reserve.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import paddle
 import os
 import sys
 import time
@@ -23,10 +24,8 @@ import pprint
 import cv2
 import argparse
 import numpy as np
-import paddle
 import paddle.fluid as fluid
 
-from utils import paddle_utils
 from utils.config import cfg
 from models.model_builder import build_model
 from models.model_builder import ModelPhase
@@ -55,7 +54,7 @@ def parse_args():
 def export_inference_config():
     deploy_cfg = '''DEPLOY:
         USE_GPU : 1
-        USE_PR : 0
+        USE_PR : 1
         MODEL_PATH : "%s"
         MODEL_FILENAME : "%s"
         PARAMS_FILENAME : "%s"
@@ -86,8 +85,9 @@ def export_inference_model(args):
     print("Exporting inference model...")
     startup_prog = fluid.Program()
     infer_prog = fluid.Program()
-    image, logit_out = build_model(
+    image, outs = build_model(
         infer_prog, startup_prog, phase=ModelPhase.PREDICT)
+    pred, logit = outs
 
     # Use CPU for exporting inference model instead of GPU
     place = fluid.CPUPlace()
@@ -110,7 +110,7 @@ def export_inference_model(args):
     fluid.io.save_inference_model(
         cfg.FREEZE.SAVE_DIR,
         feeded_var_names=[image.name],
-        target_vars=[logit_out],
+        target_vars=outs,
         executor=exe,
         main_program=infer_prog,
         model_filename=cfg.FREEZE.MODEL_FILENAME,
@@ -133,5 +133,4 @@ def main():
 
 
 if __name__ == '__main__':
-    paddle_utils.enable_static()
     main()

@@ -1,5 +1,5 @@
 # coding: utf8
-# Copyright (c) 2019 PaddlePaddle Authors. All Rights Reserve.
+# copyright (c) 2019 PaddlePaddle Authors. All Rights Reserve.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,8 +24,9 @@ from utils.config import cfg
 from loss import multi_softmax_with_loss
 from loss import multi_dice_loss
 from loss import multi_bce_loss
-from lovasz_losses import multi_lovasz_hinge_loss, multi_lovasz_softmax_loss
-from models.modeling import deeplab, unet, icnet, pspnet, hrnet, fast_scnn, ocrnet
+from lovasz_losses import lovasz_hinge
+from lovasz_losses import lovasz_softmax
+from models.modeling import deeplab, unet, icnet, pspnet, hrnet, fast_scnn
 
 
 class ModelPhase(object):
@@ -84,8 +85,6 @@ def seg_model(image, class_num):
         logits = hrnet.hrnet(image, class_num)
     elif model_name == 'fast_scnn':
         logits = fast_scnn.fast_scnn(image, class_num)
-    elif model_name == 'ocrnet':
-        logits = ocrnet.ocrnet(image, class_num)
     else:
         raise Exception(
             "unknow model name, only support unet, deeplabv3p, icnet, pspnet, hrnet, fast_scnn"
@@ -188,12 +187,13 @@ def build_model(main_prog, start_prog, phase=ModelPhase.TRAIN):
                     valid_loss.append("bce_loss")
                 if "lovasz_hinge_loss" in loss_type:
                     avg_loss_list.append(
-                        multi_lovasz_hinge_loss(logits, label, mask))
+                        lovasz_hinge(logits, label, ignore=mask))
                     loss_valid = True
                     valid_loss.append("lovasz_hinge_loss")
                 if "lovasz_softmax_loss" in loss_type:
+                    probas = fluid.layers.softmax(logits, axis=1)
                     avg_loss_list.append(
-                        multi_lovasz_softmax_loss(logits, label, mask))
+                        lovasz_softmax(probas, label, ignore=mask))
                     loss_valid = True
                     valid_loss.append("lovasz_softmax_loss")
                 if not loss_valid:
@@ -232,7 +232,11 @@ def build_model(main_prog, start_prog, phase=ModelPhase.TRAIN):
                 else:
                     logit = softmax(logit)
 
-                return image, logit
+                logit1 = fluid.layers.transpose(logit, perm=[0, 2, 3, 1])
+                pred = fluid.layers.argmax(logit1, axis=3)
+                pred = fluid.layers.unsqueeze(pred, axes=[3]) 
+
+                return image, [pred, logit]
 
             if class_num == 1:
                 out = sigmoid_to_softmax(logit)
@@ -255,10 +259,6 @@ def build_model(main_prog, start_prog, phase=ModelPhase.TRAIN):
             if ModelPhase.is_train(phase):
                 optimizer = solver.Solver(main_prog, start_prog)
                 decayed_lr = optimizer.optimise(avg_loss)
-                if class_num == 1:
-                    logit = sigmoid_to_softmax(logit)
-                else:
-                    logit = softmax(logit)
                 return data_loader, avg_loss, decayed_lr, pred, label, mask
 
 
